@@ -29,7 +29,7 @@ namespace audioElements
         [MethodImpl(MethodImplOptions.Synchronized)]
         public void addAudioElement(AudioElement audioElement)
         {
-            Debug.Log("addAudioElement of framenumber: " + audioElement.getFrameNumber() + " " + audioElement.getName() + " " + audioElement.getId() + " " + audioElement.rawData.Length);
+            //Debug.Log("addAudioElement of framenumber: " + audioElement.getFrameNumber() + " " + audioElement.getName() + " " + audioElement.getId() + " " + audioElement.rawData.Length);
             int audioElementListLenght = audioElementList.Count;
             long frameNumberOfLastAudioElement = audioElementList[audioElementListLenght - 1].getFrameNumber();
             if (frameNumberOfLastAudioElement >= audioElement.getFrameNumber())

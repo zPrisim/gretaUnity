@@ -100,7 +100,7 @@ namespace animationparameters
 
                         String[] firstLineTab = firstLine.Split(' ');
                         String[] secondLineTab = secondLine.Split(' ');
-                        /* // Debug of line content
+                        /*// Debug of line content
                         String firstLineTabStr = "";
                         for(int i=0; i<firstLineTab.Length;i++){
                         firstLineTabStr += firstLineTab[i];
