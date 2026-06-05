@@ -5,57 +5,57 @@ namespace BlendShapes
 {
     public enum ARKitBlendShape
     {
-        eyeBlinkLeft,      // 0
+        browInnerUp,
+        browOuterUpLeft,
+        browOuterUpRight,
+        browDownLeft,
+        browDownRight,
+        eyeBlinkLeft,
+        eyeBlinkRight,
+        eyeWideLeft,
+        eyeWideRight,
+        eyeSquintLeft,
+        eyeSquintRight,//10
+        eyeLookUpLeft,
+        eyeLookUpRight,
         eyeLookDownLeft,
         eyeLookInLeft,
-        eyeLookOutLeft,
-        eyeLookUpLeft,
-        eyeSquintLeft,     // 5
-        eyeWideLeft,
-        eyeBlinkRight,
         eyeLookDownRight,
         eyeLookInRight,
-        eyeLookOutRight,   // 10
-        eyeLookUpRight,
-        eyeSquintRight,
-        eyeWideRight,
-        jawForward,
-        jawLeft,           // 15
-        jawRight,
+        eyeLookOutLeft,
+        eyeLookOutRight,
+        cheekSquintLeft,
+        noseSneerLeft,//20
+        noseSneerRight,
+        cheekSquintRight,
+        cheekPuff,
         jawOpen,
+        jawForward,
+        jawLeft,
+        jawRight,
         mouthClose,
         mouthFunnel,
-        mouthPucker,       // 20
+        mouthPucker,//30
         mouthLeft,
         mouthRight,
         mouthSmileLeft,
         mouthSmileRight,
-        mouthFrownLeft,    // 25
+        mouthFrownLeft,
         mouthFrownRight,
         mouthDimpleLeft,
         mouthDimpleRight,
         mouthStretchLeft,
-        mouthStretchRight, // 30
-        mouthRollLower,
+        mouthStretchRight,//40
         mouthRollUpper,
-        mouthShrugLower,
+        mouthRollLower,
         mouthShrugUpper,
-        mouthPressLeft,    // 35
+        mouthShrugLower,
+        mouthPressLeft,
         mouthPressRight,
-        mouthLowerDownLeft,
-        mouthLowerDownRight,
         mouthUpperUpLeft,
-        mouthUpperUpRight, // 40
-        browDownLeft,
-        browDownRight,
-        browInnerUp,       
-        browOuterUpLeft,
-        browOuterUpRight,  // 45
-        cheekPuff,
-        cheekSquintLeft,
-        cheekSquintRight,
-        noseSneerLeft,
-        noseSneerRight,    // 50
-        tongueOut          // 51
+        mouthUpperUpRight,
+        mouthLowerDownLeft,
+        mouthLowerDownRight,//50
+        tongueOut
     }
 }

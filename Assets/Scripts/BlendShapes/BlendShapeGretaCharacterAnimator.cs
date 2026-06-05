@@ -4,6 +4,7 @@ using autodeskcharacter;
 using BlendShapes;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -15,10 +16,10 @@ using UnityEngine;
 
 public class BlendShapeGretaCharacterAnimator : MonoBehaviour
 {
-
     static int NUMBER_OF_FAPS = Enum.GetNames(typeof(FAPType)).Length;
     static int NUMBER_OF_BAPS = 296;
-    private List<autodeskcharacter.fapmapper.FapMapper> fapMappers;
+    private List<autodeskcharacter.bapmapper.BapMapper> bapMappers;
+    private ConcatenateJoints concatenator = new ConcatenateJoints();
 
     public bool sat = false;
     public float hipsDegrees = -90;
@@ -75,20 +76,27 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     public ModelBinding Model;
 
 
+
+
+    Dictionary<string, (string name, float weight)[]> blendshapeMapping;
+
+    private List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> visemeMeshCaches;
+
     public UnityEngine.Object blendShapeProfile;
+    public UnityEngine.Object visemeProfile;
 
     public bool DirectFapMapping = false;
+    public bool directBlendShapeFromGreta = false;
+    public bool phonemeMode = false;
 
 
     void Awake()
-    {
+    {        
+        // Temporary : fixes float errors format when communicating with greta (. vs ,)
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
 
-        //QualitySettings.vSyncCount = 0;
-        //Application.targetFrameRate = 24;
-
-        string BlendShapeProfileObjectName = Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".txt";
-
+        string BlendShapeProfilePath = Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".ini";
+        blendshapeMapping = BlendShapes.VisemeProfileFileReader.FileReader(Application.streamingAssetsPath + "/" + visemeProfile.name + ".ini");
         Time.fixedDeltaTime = (float)0.04;
         characterTimer = new TimeController();
         characterTimer.setTimeMillis(0);
@@ -106,46 +114,75 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         audioFilePlayer = new AudioFilePlayer();
         _currentAudioSource = gameObject.AddComponent<AudioSource>();
 
-        if (DirectFapMapping)
+
+        if (!phonemeMode)
         {
-            var directProfile = DirectFapProfileFilReader.FileReader(
-            Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".txt");
-
-            DirectModel = new DirectModelBinding();
-            DirectModel.Mappings = new List<DirectBlendShapeMapping>();
-            foreach (var kvp in directProfile)
-                DirectModel.Mappings.Add(new DirectBlendShapeMapping(kvp.Key, kvp.Value));
-
-            var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
-            foreach (var mesh in allMeshes)
+            if (DirectFapMapping)
             {
-                if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
-                var cache = new Dictionary<string, int>();
-                foreach (var mapping in DirectModel.Mappings)
+                var directProfile = DirectFapProfileFilReader.FileReader(
+                Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".ini");
+
+                DirectModel = new DirectModelBinding();
+                DirectModel.Mappings = new List<DirectBlendShapeMapping>();
+                foreach (var kvp in directProfile)
+                    DirectModel.Mappings.Add(new DirectBlendShapeMapping(kvp.Key, kvp.Value));
+
+                var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
+                foreach (var mesh in allMeshes)
                 {
-                    if (cache.ContainsKey(mapping.blendShapeName)) continue;
-                    cache[mapping.blendShapeName] = mesh.sharedMesh.GetBlendShapeIndex(mapping.blendShapeName);
+                    if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
+                    var cache = new Dictionary<string, int>();
+                    foreach (var mapping in DirectModel.Mappings)
+                    {
+                        if (cache.ContainsKey(mapping.blendShapeName)) continue;
+                        cache[mapping.blendShapeName] = mesh.sharedMesh.GetBlendShapeIndex(mapping.blendShapeName);
+                    }
+                    allCaches.Add((mesh, cache));
                 }
-                allCaches.Add((mesh, cache));
+                DirectModel.MeshCaches = allCaches;
             }
-            DirectModel.MeshCaches = allCaches;
-        }
-        else
-        {
-            Model = new ModelBinding();
-            Model.Mappings = BlendShapeMappingProfile.BlendShapeMappingBuild(BlendShapeProfileFileReader.FileReader(BlendShapeProfileObjectName));
-            var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
-
-            foreach (var mesh in allMeshes)
+            else
             {
-                if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
-                Model.Mesh = mesh;
-                var cache = MeshDataToDict(Model);
-                allCaches.Add((mesh, cache));
+                Model = new ModelBinding();
+                Model.Mappings = BlendShapeMappingProfile.BlendShapeMappingBuild(BlendShapeProfileFileReader.FileReader(BlendShapeProfilePath));
+                var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+                var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
+
+                foreach (var mesh in allMeshes)
+                {
+                    if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
+                    Model.Mesh = mesh;
+                    var cache = MeshDataToDict(Model);
+                    allCaches.Add((mesh, cache));
+                }
+                Model.MeshCaches = allCaches;
             }
-            Model.MeshCaches = allCaches;
+        }
+        visemeMeshCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
+
+        var allMeshesForBlendshapes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+
+        foreach (var mesh in allMeshesForBlendshapes)
+        {
+            if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0)
+                continue;
+
+            var cache = new Dictionary<string, int>();
+
+            foreach (var kvp in blendshapeMapping)
+            {
+                foreach (var (bsName, _) in kvp.Value)
+                {
+                    if (cache.ContainsKey(bsName)) continue;
+                    int idx = mesh.sharedMesh.GetBlendShapeIndex(bsName);
+                    if (idx >= 0)
+                        cache[bsName] = idx;
+                }
+            }
+
+            if (cache.Count > 0)
+                visemeMeshCaches.Add((mesh, cache));
         }
 
     }
@@ -163,6 +200,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
             {
                 if (!thriftConsumerOpened)
                 {
+
                     if (!fapReceiver.isConnected() && !fapReceiver.isOnConnection())
                     {
                         fapReceiver.startConnection();
@@ -196,6 +234,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                         SceneManager.gretaClock = (float)characterTimer.getTimeMillis();
                         currentFAPFrame = fapReceiver.getCurrentFrame(characterTimer.getTimeMillis() / 40);
                         //Debug.Log(currentFAPFrame.AnimationParametersFrame2String(0));
+
 
                     }
                     if (bapReceiver.timer.isSynchronized())
@@ -252,11 +291,15 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
 
 
 
-                if (DirectFapMapping)
+                if (directBlendShapeFromGreta)
+                    applyBlendShapeFrame(currentFAPFrame);
+                else if (DirectFapMapping)
                     applyFapFrameDirect(currentFAPFrame);
+                else if (phonemeMode)
+                    applyPhonemeFrame(currentFAPFrame);
                 else
                     applyFapFrame(currentFAPFrame);
-
+                
             }
 
             if (audioFilePlayer.isNewAudio() || audioReceiver.isNewAudio())
@@ -370,12 +413,49 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                 foreach (var (mesh, cache) in Model.MeshCaches)
                 {
                     if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
-                        mesh.SetBlendShapeWeight(idx, Mathf.Clamp(value * modelBS.weight, 0f, 100f));
+                        mesh.SetBlendShapeWeight(idx, value* modelBS.weight);
+                    /*
+                    if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
+                    {
+                        float current = mesh.GetBlendShapeWeight(idx);
+                        mesh.SetBlendShapeWeight(idx, Mathf.SmoothStep(current, value * modelBS.weight, 0.3f));
+                    }
+                    */
                 }
+
             }
         }
 
     }
+
+    public void applyBlendShapeFrame(AnimationParametersFrame fapFrame)
+    {
+        foreach (var mapping in Model.Mappings)
+        {
+            int arkitIdx = (int)mapping.ARKITBlendShape;
+            if (arkitIdx >= fapFrame.size()) continue;
+
+            float value = (float)fapFrame.getValue(arkitIdx) / 100;
+            //if (arkitIdx == 24 || arkitIdx == 28)
+            //    Debug.Log("Frame : " + fapFrame.getFrameNumber() +" / "+ arkitIdx + " : " + value * 100);
+
+            foreach (var modelBS in mapping.modelBlendShape)
+            {
+                foreach (var (mesh, cache) in Model.MeshCaches)
+                {
+                    if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
+                        //if(arkitIdx != 24)
+                        //    mesh.SetBlendShapeWeight(idx, value);
+                        //else if( mesh.name == "CC_Base_Teeth")
+                            mesh.SetBlendShapeWeight(idx, value);
+                }
+            }
+        }
+    }
+
+
+
+
 
     public void applyFapFrameDirect(AnimationParametersFrame fapFrame)
     {
@@ -390,11 +470,34 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         }
     }
 
+    public void applyPhonemeFrame(AnimationParametersFrame fapFrame)
+    {
+        int phonemeIndex = 0;
+
+        foreach (var kvp in blendshapeMapping)
+        {
+            string phoneme = kvp.Key;
+            (string name, float weight)[] blendshapes = kvp.Value;
+
+            float weight = fapFrame.getValue(phonemeIndex);
+
+            foreach (var (bsName, bsWeight) in blendshapes)
+            {
+                foreach (var (mesh, cache) in visemeMeshCaches)
+                {
+                    if (cache.TryGetValue(bsName, out int idx) && idx >= 0)
+                        mesh.SetBlendShapeWeight(idx, weight * bsWeight);
+                }
+            }
+
+            phonemeIndex++;
+        }
+    }
 
     private Dictionary<string, int> MeshDataToDict(ModelBinding model)
     {
         var cache = new Dictionary<string, int>();
-        var mesh = model.Mesh.sharedMesh;
+        var mesh = model.Mesh.sharedMesh; 
 
         foreach (var mapping in model.Mappings)
             foreach (var mbs in mapping.modelBlendShape)

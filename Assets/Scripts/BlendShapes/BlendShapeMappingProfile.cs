@@ -86,9 +86,7 @@ namespace BlendShapes
 				new FAPSource(FAPType.raise_b_lip_rm, FAPSign.Negative)}),
             (ARKitBlendShape.mouthPucker,         new[]{ 
 				new FAPSource(FAPType.stretch_l_cornerlip_o, FAPSign.Negative), 
-				new FAPSource(FAPType.stretch_r_cornerlip_o, FAPSign.Negative),
-				new FAPSource(FAPType.push_t_lip), 
-				new FAPSource(FAPType.push_b_lip) }),
+				new FAPSource(FAPType.stretch_r_cornerlip_o, FAPSign.Negative), }),
             (ARKitBlendShape.mouthLeft,           new[]{ 
 				new FAPSource(FAPType.stretch_l_cornerlip, FAPSign.Negative) }),
             (ARKitBlendShape.mouthRight,          new[]{ 

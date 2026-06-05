@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -10,6 +11,17 @@ public class BlendShapeModificationTest : MonoBehaviour
     void Start()
     {
         skinnedMeshRenderers = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        Transform[] childArray = GetComponentsInChildren<Transform>();
+
+
+        String boneNames = "";
+        foreach (Transform child in childArray)
+        {
+            boneNames += child.gameObject.name + " ";
+        }
+
+        //Debug.Log(boneNames);
+
 
         var blendshapeNames = new LinkedList<string>();
         var seen = new HashSet<string>();
@@ -26,6 +38,6 @@ public class BlendShapeModificationTest : MonoBehaviour
             }
         }
 
-        Debug.Log(string.Join(" = \n", blendshapeNames));
+        Debug.Log(string.Join(" \n", blendshapeNames));
     }
 }

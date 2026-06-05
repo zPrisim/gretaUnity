@@ -18,8 +18,6 @@ namespace BlendShapes
         };
 
         private const float EYE_BALL_AMPLITUDE = (1.0f / 100000.0f) * Mathf.Rad2Deg;
-        private const float MAX_EYE_BALL_PITCH = 45f;
-        private const float MAX_EYE_BALL_YAW = 60f;
 
         public FAPSource(FAPType fap, FAPSign sign = FAPSign.Positive, float FAPWeight = 1f)
         {

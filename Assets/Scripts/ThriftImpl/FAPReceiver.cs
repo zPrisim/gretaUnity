@@ -25,16 +25,7 @@ namespace thriftImpl
 
         public AnimationParametersFrame getCurrentFrame(long currentTime)
         {
-            for (int i = 0; i < 69; i++)
-            {
-                int value = apFramesList.getCurrentFrame(currentTime).getValue(i);
-                if (value != 0)
-                {
-                    var fap = (FAPType)i;
-                    //UnityEngine.Debug.Log(fap.ToString() + " : " + value);
-                }
-            }
-            //Debug.Log ("current frame: "+ apFramesList.getCurrentFrame(currentTime));
+            //UnityEngine.Debug.Log ("current frame: "+ apFramesList.getCurrentFrame(currentTime).AnimationParametersFrame2String());
             return apFramesList.getCurrentFrame(currentTime);
         }
     }

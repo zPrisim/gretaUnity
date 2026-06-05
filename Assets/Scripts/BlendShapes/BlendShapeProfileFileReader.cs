@@ -57,6 +57,39 @@ namespace BlendShapes
         }
 
     }
+    public static class VisemeProfileFileReader
+    {
+        public static Dictionary<string, (string name, float weight)[]> FileReader(string file_path)
+        {
+            var dict = new Dictionary<string, (string name, float weight)[]>();
+            StreamReader sr = new StreamReader(file_path);
+            while (!sr.EndOfStream)
+            {
+                string srLine = sr.ReadLine();
+                if (string.IsNullOrWhiteSpace(srLine) || srLine.TrimStart().StartsWith("//")) continue;
+                srLine = Regex.Replace(srLine, @"\s", "");
+                string[] split = srLine.Split('=');
+
+                if (split.Length < 2) continue;
+                string key = split[0];
+                string[] values = split[1].Split(',');
+
+                var entries = new List<(string name, float weight)>();
+                foreach (var v in values)
+                {
+                    if (string.IsNullOrEmpty(v)) continue;
+                    string[] tmp = v.Split(':');
+                    float w = tmp.Length > 1 ? float.Parse(tmp[1], System.Globalization.CultureInfo.InvariantCulture) : 1f;
+                    entries.Add((tmp[0], w));
+                }
+
+                dict[key] = entries.ToArray();
+            }
+            sr.Close();
+            return dict;
+        }
+    }
+
     public static class DirectFapProfileFilReader
     {
         public static Dictionary<string, FAPSource[]> FileReader(string file_path)
