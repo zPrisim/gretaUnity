@@ -11,27 +11,27 @@ public class BlendShapeGretaCharacterSynchronizer : MonoBehaviour
     private CommandSender _commandSender;
 
     /// <summary>The animation script linked to the GRETA agent we want to add behaviours to.</summary>
-    protected GretaCharacterAnimator CharacterAnimScript;
+    protected BlendShapeGretaCharacterAnimator CharacterAnimScript;
 
     /// <summary>The character which position, orientation and scale have to be synchronized and reproduced in the GRETA environment.</summary>
-	protected GameObject character;
+    protected GameObject character;
 
     /// <summary>The character's head.</summary>
-	private GameObject characterHead;
+    private GameObject characterHead;
     /// <summary>The character's left eye.</summary>
-	private GameObject characterLeftEye;
+    private GameObject characterLeftEye;
     /// <summary>The character's right eye.</summary>
-	private GameObject characterRightEye;
+    private GameObject characterRightEye;
     /// <summary>The character's mouth.</summary>
-	private GameObject characterMouth;
+    private GameObject characterMouth;
     /// <summary>The character's left hand.</summary>
-	private GameObject characterLeftHand;
+    private GameObject characterLeftHand;
     /// <summary>The character's right hand.</summary>
-	private GameObject characterRightHand;
+    private GameObject characterRightHand;
     /// <summary>The character's left foot.</summary>
-	private GameObject characterLeftFoot;
+    private GameObject characterLeftFoot;
     /// <summary>The character's right foot.</summary>
-	private GameObject characterRightFoot;
+    private GameObject characterRightFoot;
 
     /// <summary>
     /// Indicates whether we've done the initialization of the character synchronized in GRETA or not yet.<br/>
@@ -41,20 +41,27 @@ public class BlendShapeGretaCharacterSynchronizer : MonoBehaviour
 
     void Start()
     {
-        CharacterAnimScript = GetComponent<GretaCharacterAnimator>();
+        CharacterAnimScript = GetComponent<BlendShapeGretaCharacterAnimator>();
         character = CharacterAnimScript._characterMesh;
-         _commandSender = CharacterAnimScript.commandSender;
+        _commandSender = CharacterAnimScript.commandSender;
 
         character.transform.hasChanged = false;
 
-        characterHead = CharacterAnimScript.getBone("Head").gameObject;
-        characterLeftEye = CharacterAnimScript.getBone("LeftEye").gameObject;
-        characterRightEye = CharacterAnimScript.getBone("RightEye").gameObject;
-        characterMouth = CharacterAnimScript.getBone("TongueF").gameObject;
-        characterLeftHand = CharacterAnimScript.getBone("LeftHand").gameObject;
-        characterRightHand = CharacterAnimScript.getBone("RightHand").gameObject;
-        characterLeftFoot = CharacterAnimScript.getBone("LeftFoot").gameObject;
-        characterRightFoot = CharacterAnimScript.getBone("RightFoot").gameObject;
+        characterHead      = GetBoneGameObject("Head");
+        characterLeftEye   = GetBoneGameObject("LeftEye");
+        characterRightEye  = GetBoneGameObject("RightEye");
+        characterMouth     = GetBoneGameObject("Mouth");
+        characterLeftHand  = GetBoneGameObject("LeftHand");
+        characterRightHand = GetBoneGameObject("RightHand");
+        characterLeftFoot  = GetBoneGameObject("LeftFoot");
+        characterRightFoot = GetBoneGameObject("RightFoot");
+    }
+
+    /// <summary>Retourne le GameObject d'un os via le mapping, ou null si absent.</summary>
+    private GameObject GetBoneGameObject(string gretaName)
+    {
+        Transform t = CharacterAnimScript.getBone(gretaName);
+        return t != null ? t.gameObject : null;
     }
 
     void LateUpdate()

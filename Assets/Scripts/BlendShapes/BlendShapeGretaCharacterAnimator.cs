@@ -55,39 +55,22 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
 
     private AudioSource _currentAudioSource = null;
 
+    public GameObject _characterMesh;
 
-
-    public class DirectModelBinding
-    {
-        public SkinnedMeshRenderer Mesh;
-        public List<DirectBlendShapeMapping> Mappings;
-        public List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> MeshCaches;
-    }
-
-    public DirectModelBinding DirectModel;
-
-    public class ModelBinding
-    {
-        public SkinnedMeshRenderer Mesh;
-        public List<BlendShapeMapping> Mappings;
-        public List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> MeshCaches;
-    }
-
-    public ModelBinding Model;
 
 
 
 
     Dictionary<string, (string name, float weight)[]> blendshapeMapping;
 
-    private List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> visemeMeshCaches;
+    private List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> modelBlendshapeMeshCaches;
+    public UnityEngine.Object boneMappingProfile;
 
+    private Dictionary<string, string> boneNameMapping;
     public UnityEngine.Object blendShapeProfile;
-    public UnityEngine.Object visemeProfile;
 
-    public bool DirectFapMapping = false;
-    public bool directBlendShapeFromGreta = false;
-    public bool phonemeMode = false;
+    [Header("T-Pose to N-Pose")]
+    public bool invertRightArmAxis = false;
 
 
     void Awake()
@@ -95,8 +78,13 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         // Temporary : fixes float errors format when communicating with greta (. vs ,)
         Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
 
-        string BlendShapeProfilePath = Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".ini";
-        blendshapeMapping = BlendShapes.VisemeProfileFileReader.FileReader(Application.streamingAssetsPath + "/" + visemeProfile.name + ".ini");
+        blendshapeMapping = ConfigFileReaders.FileReader(Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".ini");
+        boneNameMapping = ConfigFileReaders.BoneMappingReader(Application.streamingAssetsPath + "/" + boneMappingProfile.name + ".ini");
+
+        InitCharacterMesh();
+        changeTPoseToNPose();
+        setUpSkeleton();
+
         Time.fixedDeltaTime = (float)0.04;
         characterTimer = new TimeController();
         characterTimer.setTimeMillis(0);
@@ -115,51 +103,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         _currentAudioSource = gameObject.AddComponent<AudioSource>();
 
 
-        if (!phonemeMode)
-        {
-            if (DirectFapMapping)
-            {
-                var directProfile = DirectFapProfileFilReader.FileReader(
-                Application.streamingAssetsPath + "/" + blendShapeProfile.name + ".ini");
-
-                DirectModel = new DirectModelBinding();
-                DirectModel.Mappings = new List<DirectBlendShapeMapping>();
-                foreach (var kvp in directProfile)
-                    DirectModel.Mappings.Add(new DirectBlendShapeMapping(kvp.Key, kvp.Value));
-
-                var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
-                var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
-                foreach (var mesh in allMeshes)
-                {
-                    if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
-                    var cache = new Dictionary<string, int>();
-                    foreach (var mapping in DirectModel.Mappings)
-                    {
-                        if (cache.ContainsKey(mapping.blendShapeName)) continue;
-                        cache[mapping.blendShapeName] = mesh.sharedMesh.GetBlendShapeIndex(mapping.blendShapeName);
-                    }
-                    allCaches.Add((mesh, cache));
-                }
-                DirectModel.MeshCaches = allCaches;
-            }
-            else
-            {
-                Model = new ModelBinding();
-                Model.Mappings = BlendShapeMappingProfile.BlendShapeMappingBuild(BlendShapeProfileFileReader.FileReader(BlendShapeProfilePath));
-                var allMeshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
-                var allCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
-
-                foreach (var mesh in allMeshes)
-                {
-                    if (mesh == null || mesh.sharedMesh == null || mesh.sharedMesh.blendShapeCount == 0) continue;
-                    Model.Mesh = mesh;
-                    var cache = MeshDataToDict(Model);
-                    allCaches.Add((mesh, cache));
-                }
-                Model.MeshCaches = allCaches;
-            }
-        }
-        visemeMeshCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
+        modelBlendshapeMeshCaches = new List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)>();
 
         var allMeshesForBlendshapes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
 
@@ -182,9 +126,27 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
             }
 
             if (cache.Count > 0)
-                visemeMeshCaches.Add((mesh, cache));
+                modelBlendshapeMeshCaches.Add((mesh, cache));
         }
 
+    }
+
+    protected void InitCharacterMesh()
+    {
+        if (_characterMesh == null || !_characterMesh.activeSelf)
+        {
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                Transform t = transform.GetChild(i);
+                if (t.gameObject.activeSelf)
+                {
+                    _characterMesh = t.gameObject;
+                    break;
+                }
+            }
+        }
+        if (_characterMesh == null)
+            Debug.LogError("No characterMesh assigned and no active child found");
     }
 
     public void FixedUpdate()
@@ -290,23 +252,33 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                 }
 
 
-
-                if (directBlendShapeFromGreta)
-                    applyBlendShapeFrame(currentFAPFrame);
-                else if (DirectFapMapping)
-                    applyFapFrameDirect(currentFAPFrame);
-                else if (phonemeMode)
-                    applyPhonemeFrame(currentFAPFrame);
-                else
                     applyFapFrame(currentFAPFrame);
-                
             }
 
+            if (currentBAPFrame != null)
+            {
+                if (!lastBAPFrame.isEqualTo(currentBAPFrame))
+                    lastBAPFrame = new AnimationParametersFrame(currentBAPFrame);
+                applyBapFrame(currentBAPFrame);
+            }
+
+            /*EB : START TEST FOR AUDIO BUFFER*/
             if (audioFilePlayer.isNewAudio() || audioReceiver.isNewAudio())
             {
+                //EB : I reconstructed the short values computed by cereproc from the byte buffer sent by VIB
+                // and used this short value to fill the float buffer needed by the audio clip
                 if (currentAudio.getSampleRate() > 0 && currentAudio.rawData.Length > 0)
                 {
                     int len = currentAudio.rawData.Length / 2;
+                    //EB: I couldn't find in Unity how to clean an audio clip nor how to modify its buffer length,
+                    // so I prefered to destroy the audio clip (to free the memory) and to create an audio clip
+                    // which has the appropriate float buffer size.
+                    // In theory the frequency should be provided by the currentAudio object (which should
+                    // receive such an information in the message from VIB), but since this is not the case
+                    // I hard coded the frequency (47250). It works fine with cereproc, but not with MaryTTS.
+                    // For Mary you need to set the frequency to 16000. This is ugly, really!
+                    // It should be a input and not hard coded. The problem is that the thrift message doesn't
+                    // contain the information at all and I don't want to put my hands in that part of your code.
                     Destroy(_currentAudioSource.clip);
 
                     _currentAudioSource.clip = AudioClip.Create("text", len, 1, currentAudio.getSampleRate(), false);
@@ -321,6 +293,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                         buffer[iPCM] = f;
                     }
                     _currentAudioSource.clip.SetData(buffer, 0);
+                    _currentAudioSource.Play();
 
                     audioReceiver.setNewAudio(false);
                     audioFilePlayer.setNewAudio(false);
@@ -332,6 +305,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                         float offSet = ((float)characterTimer.getTimeMillis() - ((float)currentAudio.getFrameNumber() * 40)) / 1000;
                         int samplesOffset = (int)(_currentAudioSource.clip.frequency * offSet * _currentAudioSource.clip.channels);
                         _currentAudioSource.timeSamples = samplesOffset;
+                        _currentAudioSource.Play();
                     }
                     audioReceiver.setNewAudio(false);
                     audioFilePlayer.setNewAudio(false);
@@ -402,111 +376,263 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
                 Debug.LogWarning("AnimationReceiver on host: " + commandSender.getHost() + " and port: " + commandSender.getPort() + " not connected");
         }
     }
+    public Transform findBone(string name)
+    {
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+            if (t.name == name) return t;
+        return null;
+    }
+
+    public Transform getBone(string gretaName)
+    {
+        string realName = gretaName;
+        if (boneNameMapping != null && boneNameMapping.TryGetValue(gretaName, out string mapped))
+            realName = mapped;
+        return findBone(realName);
+    }
+
+    public bool hasBone(string gretaName)
+    {
+        return getBone(gretaName) != null;
+    }
+
+    private void setUpSkeleton()
+    {
+        Quaternion oldRotation = transform.rotation;
+        Vector3 oldPosition = transform.position;
+        transform.rotation = Quaternion.identity;
+        transform.position = Vector3.zero;
+
+        if (sat)
+        {
+            correctBone("LeftLeg",   Quaternion.AngleAxis(kneesDegrees, new Vector3(0, 1, 0)));
+            correctBone("RightLeg",  Quaternion.AngleAxis(kneesDegrees, new Vector3(0, 1, 0)));
+            correctBone("LeftUpLeg", Quaternion.AngleAxis(hipsDegrees,  new Vector3(1, 0, 0)));
+            correctBone("RightUpLeg",Quaternion.AngleAxis(hipsDegrees,  new Vector3(1, 0, 0)));
+        }
+
+        bapMappers = new List<autodeskcharacter.bapmapper.BapMapper>();
+        setupBapMapper();
+
+        transform.position = oldPosition;
+        transform.rotation = oldRotation;
+    }
+
+    private void changeTPoseToNPose()
+    {
+        float clavC = 9;
+        Quaternion rclavC    = Quaternion.AngleAxis(clavC,      new Vector3(0, 0,  1));
+        Quaternion lclavC    = Quaternion.AngleAxis(clavC,      new Vector3(0, 0, -1));
+        Quaternion lShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0,  1));
+        Quaternion rShoulderC = invertRightArmAxis
+            ? Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0, -1))
+            : Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0,  1));
+        Quaternion rThumbC  =
+            Quaternion.AngleAxis(-33, new Vector3(0, 1, 0)) *
+            Quaternion.AngleAxis(-20, new Vector3(0, 0, 1)) *
+            Quaternion.AngleAxis( 15, new Vector3(1, 0, 0));
+
+        correctBone("RightShoulder",   rclavC);
+        correctBone("LeftShoulder",    lclavC);
+        correctBone("RightArm",        rShoulderC);
+        correctBone("LeftArm",         lShoulderC);
+        correctBone("RightHandThumb1", rThumbC);
+        correctBone("LeftHandThumb1",  rThumbC);
+    }
+
+    private void setupBapMapper()
+    {
+        List<JointType> typesUsed = new List<JointType>();
+
+        // spine
+        map(typesUsed, "Hips",   JointType.HumanoidRoot);
+        map(typesUsed, "Head",   JointType.skullbase);
+        map(typesUsed, "Neck1",  JointType.vc5);
+        map(typesUsed, "Neck",   JointType.vc7);
+        map(typesUsed, "Spine4", JointType.vt6);
+        map(typesUsed, "Spine3", JointType.vt12);
+        map(typesUsed, "Spine2", JointType.vl1);
+        map(typesUsed, "Spine1", JointType.vl3);
+        map(typesUsed, "Spine",  JointType.vl5);
+        map(typesUsed, "Spine2V", JointType.vl1, -0.5);
+        map(typesUsed, "Spine1V", JointType.vl3, -0.5);
+        map(typesUsed, "SpineV",  JointType.vl5, -0.5);
+
+        // legs
+        map(typesUsed, "LeftUpLeg",  "LeftUpLegRoll",  JointType.l_hip,    0.5, false);
+        map(typesUsed, "LeftLeg",    JointType.l_knee);
+        map(typesUsed, "LeftFoot",   "LeftLegRoll",    JointType.l_ankle,  0.5, true);
+        map(typesUsed, "LeftToeBase", JointType.l_midtarsal);
+
+        map(typesUsed, "RightUpLeg", "RightUpLegRoll", JointType.r_hip,    0.5, false);
+        map(typesUsed, "RightLeg",   JointType.r_knee);
+        map(typesUsed, "RightFoot",  "RightLegRoll",   JointType.r_ankle,  0.5, true);
+        map(typesUsed, "RightToeBase", JointType.r_midtarsal);
+
+        // right arm
+        map(typesUsed, "RightShoulder", JointType.r_sternoclavicular);
+        mapShoulder(typesUsed, "RightArm", "RightArmRoll", JointType.r_shoulder, JointType.r_acromioclavicular, 0.5);
+        map(typesUsed, "RightForeArm", JointType.r_elbow);
+        map(typesUsed, "RightHand", "RightForeArmRoll", JointType.r_wrist, 0.75, true);
+
+        map(typesUsed, "RightHandThumb1", JointType.r_thumb1);
+        map(typesUsed, "RightHandThumb2", JointType.r_thumb2);
+        map(typesUsed, "RightHandThumb3", JointType.r_thumb3);
+
+        map(typesUsed, "RightHandIndex0", JointType.r_index0);
+        map(typesUsed, "RightHandIndex1", JointType.r_index1);
+        map(typesUsed, "RightHandIndex2", JointType.r_index2);
+        map(typesUsed, "RightHandIndex3", JointType.r_index3);
+
+        map(typesUsed, "RightHandMiddle1", JointType.r_middle1);
+        map(typesUsed, "RightHandMiddle2", JointType.r_middle2);
+        map(typesUsed, "RightHandMiddle3", JointType.r_middle3);
+
+        map(typesUsed, "RightHandRing1", JointType.r_ring1);
+        map(typesUsed, "RightHandRing2", JointType.r_ring2);
+        map(typesUsed, "RightHandRing3", JointType.r_ring3);
+
+        map(typesUsed, "RightHandPinky0", JointType.r_pinky0);
+        map(typesUsed, "RightHandPinky1", JointType.r_pinky1);
+        map(typesUsed, "RightHandPinky2", JointType.r_pinky2);
+        map(typesUsed, "RightHandPinky3", JointType.r_pinky3);
+
+        // left arm
+        map(typesUsed, "LeftShoulder", JointType.l_sternoclavicular);
+        mapShoulder(typesUsed, "LeftArm", "LeftArmRoll", JointType.l_shoulder, JointType.l_acromioclavicular, 0.5);
+        map(typesUsed, "LeftForeArm", JointType.l_elbow);
+        map(typesUsed, "LeftHand", "LeftForeArmRoll", JointType.l_wrist, 0.75, true);
+
+        map(typesUsed, "LeftHandThumb1", JointType.l_thumb1);
+        map(typesUsed, "LeftHandThumb2", JointType.l_thumb2);
+        map(typesUsed, "LeftHandThumb3", JointType.l_thumb3);
+
+        map(typesUsed, "LeftHandIndex0", JointType.l_index0);
+        map(typesUsed, "LeftHandIndex1", JointType.l_index1);
+        map(typesUsed, "LeftHandIndex2", JointType.l_index2);
+        map(typesUsed, "LeftHandIndex3", JointType.l_index3);
+
+        map(typesUsed, "LeftHandMiddle1", JointType.l_middle1);
+        map(typesUsed, "LeftHandMiddle2", JointType.l_middle2);
+        map(typesUsed, "LeftHandMiddle3", JointType.l_middle3);
+
+        map(typesUsed, "LeftHandRing1", JointType.l_ring1);
+        map(typesUsed, "LeftHandRing2", JointType.l_ring2);
+        map(typesUsed, "LeftHandRing3", JointType.l_ring3);
+
+        map(typesUsed, "LeftHandPinky0", JointType.l_pinky0);
+        map(typesUsed, "LeftHandPinky1", JointType.l_pinky1);
+        map(typesUsed, "LeftHandPinky2", JointType.l_pinky2);
+        map(typesUsed, "LeftHandPinky3", JointType.l_pinky3);
+
+        concatenator.setJointToUse(typesUsed);
+    }
+
+    private void map(List<JointType> typesUsed, String boneName, JointType joint)
+    {
+        map(typesUsed, boneName, null, joint, 0, true, 1);
+    }
+
+    private void map(List<JointType> typesUsed, String boneName, JointType joint, double scale)
+    {
+        map(typesUsed, boneName, null, joint, 0, true, scale);
+    }
+
+    private void map(List<JointType> typesUsed, String boneName, String twistBoneName, JointType joint, double twistFactor, bool before)
+    {
+        map(typesUsed, boneName, twistBoneName, joint, twistFactor, before, 1);
+    }
+
+    private void map(List<JointType> typesUsed, String boneName, String twistBoneName, JointType joint, double twistFactor, bool before, double scale)
+    {
+        if (!hasBone(boneName)) return;
+
+        List<Vector3> dofs  = new List<Vector3>(3);
+        List<BAPType> types = new List<BAPType>(3);
+        if (joint.rotationX != BAPType.null_bap) { dofs.Add(new Vector3(1, 0, 0));  types.Add(joint.rotationX); }
+        if (joint.rotationY != BAPType.null_bap) { dofs.Add(new Vector3(0, -1, 0)); types.Add(joint.rotationY); }
+        if (joint.rotationZ != BAPType.null_bap) { dofs.Add(new Vector3(0, 0, -1)); types.Add(joint.rotationZ); }
+
+        if (dofs.Count == 0) return;
+
+        if (dofs.Count == 1)
+        {
+            bapMappers.Add(new autodeskcharacter.bapmapper.OneDOF(getBone(boneName), types[0], dofs[0]));
+        }
+        else if (dofs.Count == 2)
+        {
+            bapMappers.Add(new autodeskcharacter.bapmapper.TwoDOF(getBone(boneName), types[0], dofs[0], types[1], dofs[1]));
+        }
+        else // 3 DOF
+        {
+            if (twistBoneName != null && hasBone(twistBoneName))
+            {
+                if (before)
+                    bapMappers.Add(new autodeskcharacter.bapmapper.YawTwistBeforeMapper(getBone(boneName), getBone(twistBoneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2], twistFactor));
+                else
+                    bapMappers.Add(new autodeskcharacter.bapmapper.YawTwistAfterMapper(getBone(boneName), getBone(twistBoneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2], twistFactor));
+            }
+            else if (scale == 1)
+            {
+                bapMappers.Add(new autodeskcharacter.bapmapper.ThreeDOF(getBone(boneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2]));
+            }
+            else
+            {
+                var bm = new autodeskcharacter.bapmapper.ThreeDOFScaled(getBone(boneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2]);
+                bm.setScale(scale);
+                bapMappers.Add(bm);
+            }
+        }
+        typesUsed.Add(joint);
+    }
+
+    private void mapShoulder(List<JointType> typesUsed, String boneName, String twistBoneName, JointType shoulderJoint, JointType acromiumJoint, double twistFactor)
+    {
+        if (!hasBone(boneName)) return;
+
+        List<Vector3> dofs  = new List<Vector3>(3) { new Vector3(1,0,0), new Vector3(0,-1,0), new Vector3(0,0,-1) };
+        List<BAPType> types = new List<BAPType>(3) { shoulderJoint.rotationX, shoulderJoint.rotationY, shoulderJoint.rotationZ };
+
+        if (hasBone(twistBoneName))
+            bapMappers.Add(new autodeskcharacter.bapmapper.YawTwistAfterMapper(getBone(boneName), getBone(twistBoneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2], twistFactor));
+        else
+            bapMappers.Add(new autodeskcharacter.bapmapper.ThreeDOF(getBone(boneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2]));
+
+        typesUsed.Add(shoulderJoint);
+    }
+
+    private void correctBone(string boneName, Quaternion correction)
+    {
+        Transform bone = getBone(boneName);
+        if (bone != null)
+            bone.localRotation = correction * bone.localRotation;
+    }
+
+    public void applyBapFrame(AnimationParametersFrame bapframe)
+    {
+        bapframe = concatenator.concatenateJoints(bapframe);
+        foreach (autodeskcharacter.bapmapper.BapMapper mapper in bapMappers)
+            mapper.applyBap(bapframe);
+    }
+
 
     public void applyFapFrame(AnimationParametersFrame fapFrame)
     {
-        foreach (var mapping in Model.Mappings)
-        {
-            float value = mapping.GetBlendShapeValue(fapFrame);
-            foreach (var modelBS in mapping.modelBlendShape)
-            {
-                foreach (var (mesh, cache) in Model.MeshCaches)
-                {
-                    if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
-                        mesh.SetBlendShapeWeight(idx, value* modelBS.weight);
-                    /*
-                    if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
-                    {
-                        float current = mesh.GetBlendShapeWeight(idx);
-                        mesh.SetBlendShapeWeight(idx, Mathf.SmoothStep(current, value * modelBS.weight, 0.3f));
-                    }
-                    */
-                }
-
-            }
-        }
-
-    }
-
-    public void applyBlendShapeFrame(AnimationParametersFrame fapFrame)
-    {
-        foreach (var mapping in Model.Mappings)
-        {
-            int arkitIdx = (int)mapping.ARKITBlendShape;
-            if (arkitIdx >= fapFrame.size()) continue;
-
-            float value = (float)fapFrame.getValue(arkitIdx) / 100;
-            //if (arkitIdx == 24 || arkitIdx == 28)
-            //    Debug.Log("Frame : " + fapFrame.getFrameNumber() +" / "+ arkitIdx + " : " + value * 100);
-
-            foreach (var modelBS in mapping.modelBlendShape)
-            {
-                foreach (var (mesh, cache) in Model.MeshCaches)
-                {
-                    if (cache.TryGetValue(modelBS.blendShapeName, out int idx) && idx >= 0)
-                        //if(arkitIdx != 24)
-                        //    mesh.SetBlendShapeWeight(idx, value);
-                        //else if( mesh.name == "CC_Base_Teeth")
-                            mesh.SetBlendShapeWeight(idx, value);
-                }
-            }
-        }
-    }
-
-
-
-
-
-    public void applyFapFrameDirect(AnimationParametersFrame fapFrame)
-    {
-        foreach (var mapping in DirectModel.Mappings)
-        {
-            float value = mapping.GetBlendShapeValue(fapFrame);
-            foreach (var (mesh, cache) in DirectModel.MeshCaches)
-            {
-                if (cache.TryGetValue(mapping.blendShapeName, out int idx) && idx >= 0)
-                    mesh.SetBlendShapeWeight(idx, value);
-            }
-        }
-    }
-
-    public void applyPhonemeFrame(AnimationParametersFrame fapFrame)
-    {
         int phonemeIndex = 0;
-
         foreach (var kvp in blendshapeMapping)
         {
-            string phoneme = kvp.Key;
             (string name, float weight)[] blendshapes = kvp.Value;
-
             float weight = fapFrame.getValue(phonemeIndex);
 
             foreach (var (bsName, bsWeight) in blendshapes)
             {
-                foreach (var (mesh, cache) in visemeMeshCaches)
+                foreach (var (mesh, cache) in modelBlendshapeMeshCaches)
                 {
                     if (cache.TryGetValue(bsName, out int idx) && idx >= 0)
                         mesh.SetBlendShapeWeight(idx, weight * bsWeight);
                 }
             }
-
             phonemeIndex++;
         }
-    }
-
-    private Dictionary<string, int> MeshDataToDict(ModelBinding model)
-    {
-        var cache = new Dictionary<string, int>();
-        var mesh = model.Mesh.sharedMesh; 
-
-        foreach (var mapping in model.Mappings)
-            foreach (var mbs in mapping.modelBlendShape)
-            {
-                if (cache.ContainsKey(mbs.blendShapeName)) continue;
-                int idx = mesh.GetBlendShapeIndex(mbs.blendShapeName);
-                cache[mbs.blendShapeName] = idx;
-            }
-
-        return cache;
     }
 }

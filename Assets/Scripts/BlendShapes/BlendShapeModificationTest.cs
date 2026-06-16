@@ -38,6 +38,10 @@ public class BlendShapeModificationTest : MonoBehaviour
             }
         }
 
-        Debug.Log(string.Join(" \n", blendshapeNames));
+        //Debug.Log(string.Join(" \n", blendshapeNames));
+        var names = new System.Collections.Generic.List<string>();
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+            names.Add(t.name);
+        Debug.Log(string.Join("\n", names));
     }
 }
