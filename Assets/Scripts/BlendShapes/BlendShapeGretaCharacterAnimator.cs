@@ -26,10 +26,10 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     public float kneesDegrees = 90;
 
     public bool distantConnection = true;
-    public int FAP_RECEIVER_PORT = 9090;
-    public int BAP_RECEIVER_PORT = 9900;
-    public int AUDIO_RECEIVER_PORT = 9009;
-    public int CMD_SENDER_PORT = 9912;
+    public int FAP_RECEIVER_PORT = 9700;
+    public int BAP_RECEIVER_PORT = 9070;
+    public int AUDIO_RECEIVER_PORT = 9007;
+    public int CMD_SENDER_PORT = 9912; 
     public string GretaServersHost = "localhost";
 
     public float UpperBodyAnimationEffect = 0.9f;
@@ -64,13 +64,25 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     Dictionary<string, (string name, float weight)[]> blendshapeMapping;
 
     private List<(SkinnedMeshRenderer mesh, Dictionary<string, int> cache)> modelBlendshapeMeshCaches;
+    private Dictionary<string, Transform> boneCache;
     public UnityEngine.Object boneMappingProfile;
 
     private Dictionary<string, string> boneNameMapping;
+
+    // Pre-computed blendshape mapping for applyFapFrame
+    private struct BlendShapeEntry
+    {
+        public SkinnedMeshRenderer mesh;
+        public int blendShapeIndex;
+        public int phonemeIndex;
+        public float weight;
+    }
+    private BlendShapeEntry[] fapEntries;
+
     public UnityEngine.Object blendShapeProfile;
 
-    [Header("T-Pose to N-Pose")]
-    public bool invertRightArmAxis = false;
+    [Header("Arm Pose Correction")]
+    public bool CC5Model = false;
 
 
     void Awake()
@@ -82,6 +94,12 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         boneNameMapping = ConfigFileReaders.BoneMappingReader(Application.streamingAssetsPath + "/" + boneMappingProfile.name + ".ini");
 
         InitCharacterMesh();
+
+        // Build bone lookup cache once
+        boneCache = new Dictionary<string, Transform>();
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+            boneCache[t.name] = t;
+
         changeTPoseToNPose();
         setUpSkeleton();
 
@@ -128,6 +146,31 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
             if (cache.Count > 0)
                 modelBlendshapeMeshCaches.Add((mesh, cache));
         }
+
+        // Pre-compute flat FAP entries for applyFapFrame
+        var fapList = new List<BlendShapeEntry>();
+        int pIdx = 0;
+        foreach (var kvp in blendshapeMapping)
+        {
+            foreach (var (bsName, bsWeight) in kvp.Value)
+            {
+                foreach (var (mesh, cache) in modelBlendshapeMeshCaches)
+                {
+                    if (cache.TryGetValue(bsName, out int idx) && idx >= 0)
+                    {
+                        fapList.Add(new BlendShapeEntry
+                        {
+                            mesh = mesh,
+                            blendShapeIndex = idx,
+                            phonemeIndex = pIdx,
+                            weight = bsWeight
+                        });
+                    }
+                }
+            }
+            pIdx++;
+        }
+        fapEntries = fapList.ToArray();
 
     }
 
@@ -378,8 +421,8 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     }
     public Transform findBone(string name)
     {
-        foreach (Transform t in GetComponentsInChildren<Transform>(true))
-            if (t.name == name) return t;
+        if (boneCache != null && boneCache.TryGetValue(name, out Transform t))
+            return t;
         return null;
     }
 
@@ -421,23 +464,52 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     private void changeTPoseToNPose()
     {
         float clavC = 9;
-        Quaternion rclavC    = Quaternion.AngleAxis(clavC,      new Vector3(0, 0,  1));
-        Quaternion lclavC    = Quaternion.AngleAxis(clavC,      new Vector3(0, 0, -1));
-        Quaternion lShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0,  1));
-        Quaternion rShoulderC = invertRightArmAxis
-            ? Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0, -1))
-            : Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0,  1));
-        Quaternion rThumbC  =
-            Quaternion.AngleAxis(-33, new Vector3(0, 1, 0)) *
-            Quaternion.AngleAxis(-20, new Vector3(0, 0, 1)) *
-            Quaternion.AngleAxis( 15, new Vector3(1, 0, 0));
+        Quaternion rclavC   = Quaternion.AngleAxis(clavC, new Vector3(0, 0,  1));
+        Quaternion lclavC   = Quaternion.AngleAxis(clavC, new Vector3(0, 0, -1));
+
+        Quaternion rShoulderC;
+        Quaternion lShoulderC;
+        Quaternion rThumbC;
+        Quaternion lThumbC;
+
+        if (CC5Model)
+        {
+            rShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0, -1));
+            lShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0,  1));
+
+            rThumbC =
+                Quaternion.AngleAxis( 33, new Vector3(0, 1, 0)) *
+                Quaternion.AngleAxis(20, new Vector3(0, 0, 1)) *
+                Quaternion.AngleAxis( 15, new Vector3(1, 0, 0));
+            lThumbC =
+                Quaternion.AngleAxis(-33, new Vector3(0, 1, 0)) *
+                Quaternion.AngleAxis(-20, new Vector3(0, 0, 1)) *
+                Quaternion.AngleAxis(15, new Vector3(1, 0, 0));
+        }
+        else
+        {
+            rShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0, 1));
+            lShoulderC = Quaternion.AngleAxis(90 - clavC, new Vector3(0, 0, 1));
+
+            rThumbC =
+                Quaternion.AngleAxis(-33, new Vector3(0, 1, 0)) *
+                Quaternion.AngleAxis(-20, new Vector3(0, 0, 1)) *
+                Quaternion.AngleAxis( 15, new Vector3(1, 0, 0));
+            lThumbC = rThumbC;
+        }
 
         correctBone("RightShoulder",   rclavC);
         correctBone("LeftShoulder",    lclavC);
         correctBone("RightArm",        rShoulderC);
         correctBone("LeftArm",         lShoulderC);
         correctBone("RightHandThumb1", rThumbC);
-        correctBone("LeftHandThumb1",  rThumbC);
+        correctBone("LeftHandThumb1",  lThumbC);
+
+        if (CC5Model)
+        {
+            correctBone("RightArm", Quaternion.Euler(0f, 15f, -15f));
+            correctBone("LeftArm",  Quaternion.Euler(0f, -15f,  15f));
+        }
     }
 
     private void setupBapMapper()
@@ -475,7 +547,7 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
         map(typesUsed, "RightForeArm", JointType.r_elbow);
         map(typesUsed, "RightHand", "RightForeArmRoll", JointType.r_wrist, 0.75, true);
 
-        map(typesUsed, "RightHandThumb1", JointType.r_thumb1);
+        map(typesUsed, "RightHandThumb1", JointType.r_thumb1, CC5Model);
         map(typesUsed, "RightHandThumb2", JointType.r_thumb2);
         map(typesUsed, "RightHandThumb3", JointType.r_thumb3);
 
@@ -531,6 +603,32 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
     private void map(List<JointType> typesUsed, String boneName, JointType joint)
     {
         map(typesUsed, boneName, null, joint, 0, true, 1);
+    }
+
+    private void map(List<JointType> typesUsed, String boneName, JointType joint, bool invertY)
+    {
+        if (!hasBone(boneName)) return;
+        if (!invertY)
+        {
+            map(typesUsed, boneName, null, joint, 0, true, 1);
+            return;
+        }
+
+        List<Vector3> dofs  = new List<Vector3>(3);
+        List<BAPType> types = new List<BAPType>(3);
+        if (joint.rotationX != BAPType.null_bap) { dofs.Add(new Vector3(1, 0, 0));  types.Add(joint.rotationX); }
+        if (joint.rotationY != BAPType.null_bap) { dofs.Add(new Vector3(0, 1, 0));  types.Add(joint.rotationY); }
+        if (joint.rotationZ != BAPType.null_bap) { dofs.Add(new Vector3(0, 0, -1)); types.Add(joint.rotationZ); }
+
+        if (dofs.Count == 0) return;
+        if (dofs.Count == 1)
+            bapMappers.Add(new autodeskcharacter.bapmapper.OneDOF(getBone(boneName), types[0], dofs[0]));
+        else if (dofs.Count == 2)
+            bapMappers.Add(new autodeskcharacter.bapmapper.TwoDOF(getBone(boneName), types[0], dofs[0], types[1], dofs[1]));
+        else
+            bapMappers.Add(new autodeskcharacter.bapmapper.ThreeDOF(getBone(boneName), types[0], dofs[0], types[1], dofs[1], types[2], dofs[2]));
+
+        typesUsed.Add(joint);
     }
 
     private void map(List<JointType> typesUsed, String boneName, JointType joint, double scale)
@@ -618,21 +716,11 @@ public class BlendShapeGretaCharacterAnimator : MonoBehaviour
 
     public void applyFapFrame(AnimationParametersFrame fapFrame)
     {
-        int phonemeIndex = 0;
-        foreach (var kvp in blendshapeMapping)
+        for (int i = 0; i < fapEntries.Length; i++)
         {
-            (string name, float weight)[] blendshapes = kvp.Value;
-            float weight = fapFrame.getValue(phonemeIndex);
-
-            foreach (var (bsName, bsWeight) in blendshapes)
-            {
-                foreach (var (mesh, cache) in modelBlendshapeMeshCaches)
-                {
-                    if (cache.TryGetValue(bsName, out int idx) && idx >= 0)
-                        mesh.SetBlendShapeWeight(idx, weight * bsWeight);
-                }
-            }
-            phonemeIndex++;
+            ref BlendShapeEntry e = ref fapEntries[i];
+            float value = fapFrame.getValue(e.phonemeIndex);
+            e.mesh.SetBlendShapeWeight(e.blendShapeIndex, value * e.weight);
         }
     }
 }
