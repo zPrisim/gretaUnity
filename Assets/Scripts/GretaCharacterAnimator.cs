@@ -1,12 +1,14 @@
-using System;
-using System.Collections.Generic;
-using UnityEngine;
 using animationparameters;
 using audioElements;
 using autodeskcharacter;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Threading;
 using thriftImpl;
 using time;
 using tools;
+using UnityEngine;
 
 public class GretaCharacterAnimator : MonoBehaviour
 {
@@ -61,6 +63,9 @@ public class GretaCharacterAnimator : MonoBehaviour
     // Use this for initialization
     void Awake()
     {
+        // Temporary : fixes float errors format when communicating with greta (. vs ,)
+        Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+
         InitCharacterMesh();
 
         changeTPoseToNPose();
